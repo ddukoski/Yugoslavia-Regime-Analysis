@@ -1,0 +1,598 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage{geometry}
+\geometry{margin=2.54cm}
+\usepackage{enumitem}
+% Macedonian
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[english]{babel}
+% Tables
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage[table]{xcolor}
+\usepackage{colortbl}
+\usepackage{float}
+\usepackage{multirow}
+% Code
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+% Math
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{bbm}
+% Custom commands and labels
+\renewcommand{\lstlistingname}{Source Code}
+% Code formatting
+\definecolor{codebg}{RGB}{230, 240, 255}   
+\definecolor{keywordblue}{RGB}{0, 70, 140}  
+\definecolor{commentblue}{RGB}{100, 130, 180}
+\definecolor{stringblue}{RGB}{0, 100, 180}
+\lstset{
+  backgroundcolor=\color{codebg},
+  language=Python,
+  basicstyle=\ttfamily\footnotesize\color{black},
+  keywordstyle=\color{keywordblue}\bfseries,
+  commentstyle=\color{commentblue}\itshape,
+  stringstyle=\color{stringblue},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  stepnumber=1,
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{keywordblue},
+  breaklines=true,
+  tabsize=4,
+  captionpos=b,
+  showspaces=false,
+  showstringspaces=false
+}
+\title{Analysis of Population Growth in the Member States of the Socialist Federal Republic of Yugoslavia}
+\author{David Dukoski, Index No. 221514}
+\begin{document}
+\maketitle
+\begin{abstract}
+The goal of this project is to analyze the population in the states that were members of Yugoslavia, during its existence and after its dissolution, with the ultimate aim of identifying any population trends, testing hypotheses about them, and finding structural breaks (years with significant/key events). An attempt will be made to model the population and its growth using models such as ARIMA or SARIMA(X) and to use appropriate metrics to evaluate the results, i.e., how well the model fits the data (goodness of fit). Additionally, tests such as the Bai-Perron test will be applied to identify points where structural changes occur between different parts of the time series. Finally, for the definitive detection of additional anomalous years, methods from unsupervised learning will be employed.
+\end{abstract}
+\section{Data Analysis and Assumptions}
+\subsection{Data Source}
+First, we will clarify which data we will use to achieve our goals. We will use the dataset available at \href{https://ourworldindata.org/explorers/population-and-demography?tab=table&time=earliest..2023&facet=none&hideControls=true&indicator=Population&Sex=Both+sexes&Age=Total&Projection+scenario=None&country=OWID_WRL~Africa+%28UN%29~Asia+%28UN%29~Northern+America+%28UN%29~Latin+America+and+the+Caribbean+%28UN%29~Europe+%28UN%29}{https://ourworldindata.org}. We are primarily interested in the number of people living there, but (if necessary) we will also use various statistics - mortality, birth rate, number of migrations, etc. Since the dataset contains (almost) all countries, we will filter only the republics that were members of the SFRY, i.e., Yugoslavia - Macedonia, Serbia, Montenegro, Croatia, Slovenia, and Bosnia and Herzegovina.
+\subsection{Visualization and Nature}
+First, we will begin by examining the nature of the population itself from 1950 to 2023, as this period is available from the dataset. We do this to establish several assumptions for each of the six former members and to gain an intuitive perspective on what is happening.
+To understand the basic structure of the data, Figure~\ref{fig:population-trends} shows the population trends. The point in time 1991 is shown as the clearest visual change in almost all populations of the former member states in the period from 1950 to 2023 and is an additional clear visual candidate for a structural break or some anomaly due to the breakup of Yugoslavia.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\linewidth]{pop-all-min-max.png}
+    \caption{Populations of former SFRY member states, 1950-2023}
+    \label{fig:population-trends}
+\end{figure}
+If we examine the visualized time series for each of the former Yugoslav republics, we can observe several interesting patterns and assumptions:
+\begin{enumerate}
+    \item \textbf{Break in trend around 1991:} In almost all countries, a slowdown in growth or a direct population decline is observed around 1991 — a year that is historically significant due to the collapse of Yugoslavia and the beginning of military conflicts, as we have already mentioned.
+    \item \textbf{Pronounced decline in Bosnia and Herzegovina:} Bosnia and Herzegovina experienced the most dramatic decline immediately after 1991 — which is most likely related to the civil war, migrations, and human losses.
+    \item \textbf{Montenegro as an exception:} Unlike the others, Montenegro does not show a clear decline in the same period, which may indicate a relatively more stable demographic situation or that it was less directly affected by the conflicts.
+    \item \textbf{Entering stagnation:} In most countries, after 1991, the population either stagnates or begins to decline. This may be a result of emigration, reduced birth rates, population aging, and other factors. Here, we can further investigate other key events besides the breakup of Yugoslavia (which may have been triggered by the breakup itself).
+    \item \textbf{Different trends before 1991:} Before 1991, almost all countries had a \textit{logistic} or \textit{exponential} growth trend, which can be further examined through modeling.
+\end{enumerate}
+All these observations are based on visual analysis, and some of them will be rejected or accepted with appropriate statistical analyses later. Finally, we will specifically examine whether the point at \textcolor{red!70!black}{1991} represents a \textbf{structural break} or some kind of \textbf{anomaly} in the series, also using statistical tests and machine learning algorithms.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{pop-normalized.png}
+    \caption{Populations of former SFRY member states, 1950-2023}
+    \label{fig:population-trends-combined}
+\end{figure}
+Another interesting observation in the visualization in Figure~\ref{fig:population-trends-combined} is that the functioning as a single entity (state - i.e., Yugoslavia) is clearly visible until 1991 (the breakup), and after that, the number of populations in the countries clearly diverges and becomes, in some sense, completely uncorrelated once they become their own republics.
+\vspace{3cm}
+\section{Time Series Analysis - Population}
+To determine whether the population time series contains temporal dependence and structure that can be modeled or transformed, we first analyze the autocorrelation and stationarity of the data. Autocorrelation will tell us how populations from previous years affect future ones, and stationarity — whether over all time steps $t$, $\sigma^2$ - the variance and $\mu$ - the expected value of the population are constant, and additionally:
+$$Cov(X_t, X_{t+h}) = \gamma(h),\quad \ h \in \{1, 2, ...\},$$
+i.e., the goal is to express that the autocovariance between any 2 points at time steps with lag $h$ is a function of only the lag.
+Stationarity is particularly important in forecasting because it has \textbf{stable statistical properties} through which it is defined, and this supports the models that make predictions.
+\subsection{Autocorrelation}
+To visualize the degree of autocorrelation of the population with \textbf{different lags} - we use the \textbf{autocorrelation function} $\mathbf{\rho}$ (Autocorrelation Function (abbr. \textbf{ACF})) which is analytically defined as:
+% theoretical
+$$
+\rho(h) = \frac{\mathrm{Cov}(X_t, X_{t+h})}{\mathrm{Var}(X_t)} = \frac{\mathbb{E} \big[(X_t - \mu)(X_{t+h} - \mu)\big]}{\sigma^2},\quad \{ X_t \}_{t\in T}
+$$
+and accordingly, the sample autocorrelation function $\hat{\rho}$ is:
+% from sample
+$$
+\hat{\rho}(h) = \frac{\sum_{t=1}^{n - h} (x_t - \bar{x})(x_{t+h} - \bar{x})}{\sum_{t=1}^{n} (x_t - \bar{x})^2},\quad \{ x_t \}_{t\in T}
+$$
+where $T = \{1950, 1951, \dots, 2023\}$. This function is already implemented with appropriate \texttt{python} libraries such as \texttt{statsmodels.tsa} - which is used here, and is applied in the background during the computation of various visualizations.
+Since we have a total of $74$ time steps - years, we will examine the ACF with a maximum lag of $73$ to get a complete picture of the autocorrelation in the populations of the countries. By identifying significant lags, we can understand the extent of the time memory in the data — i.e., how many years back affect the current state of the population. This information provides a basis for selecting appropriate statistical models and analysis methods if we have high autocorrelation, as discussed after observing the autocorrelation.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{acfs.png}
+    \caption{ACF visualized for all republics with maximum lag}
+    \label{fig:acf-yugo}
+\end{figure}
+According to the visualization, it is clear that in each country, significant autocorrelation occurs up to approximately the eighth lag. This indicates strong temporal dependence — population values in a given year remain closely related to values from the previous few years.
+This degree of autocorrelation has key implications for further analysis. The raw population series cannot be treated as a collection of independent and identically distributed ($i.i.d.$) observations, so directly extracting probability distributions from them would lead to incorrect or unstable conclusions.
+Instead, time series modeling methods (e.g., ARIMA) can be used, which explicitly incorporate the observed autocorrelation structure and thus enable more reliable prediction of future values;
+Transformation of the data (e.g., first difference or annual percentage growth rate) and re-checking for stationarity and autocorrelation. If the transformed series becomes approximately stationary and without significant autocorrelation, further distributional modeling based on those differences/rates is possible, as they are closer to the $i.i.d.$ assumption.
+Ignoring autocorrelation — without appropriate transformation or a model that accounts for it — risks incorrect modeling and inaccurate predictions. Therefore, discovering and accurately addressing this temporal dependence is a necessary step before any serious statistical or predictive analysis of population data.
+To visualize this better and have a clearer overview of where the autocorrelation comes from, we can create a \texttt{lag plot}, where we will visualize populations from one lag against other lags in the time series.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{lag_plots_pop.png}
+    \caption{\texttt{Lag plot} up to 4 lags for each population by country}
+    \label{fig:lag-plot-pop}
+\end{figure}
+It is observed that after each lag $t + h$, for $h \in \{1, 2, 3, 4\}$, autocorrelation is confirmed with an approximately linear form of the visualization, and additionally, autocorrelation decreases with each increase in $h$, i.e., in some way, the points on the graphs "spread out," as implied by the ACF graphs.
+In fact, this visualization, similar to a standard \texttt{scatterplot}, appropriately shows the relationship of the population (or generally - the variable) at time step $t$ with itself, but at another time step $t + h$, $h 
+= 0$. As the ACF graphs themselves say, as well as the confidence interval visualized in blue behind them, for closer lags — up to $\approx 7$ — we have clear correlation, but if we visualize a \texttt{lag plot} with a larger lag, we get Figure~\ref{fig:further-lag} and it becomes clear that for larger lags, the series is not autocorrelated.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{further_lag.png}
+    \caption{Example of a \texttt{lag plot} with a lower lag}
+    \label{fig:further-lag}
+\end{figure}
+\subsection{Stationarity}
+We can also test for stationarity to see if we can directly use algorithms with which we can model the population. To test for stationarity, we can perform the Augmented Dickey-Fuller test in \texttt{python}, yielding the following results in the table.
+\subsection{Differencing, backshift, and population forecasting}
+In this section, several fundamental concepts are defined step by step, to clarify what happens if we want to forecast population values — or any time series $X_t$.
+\subsubsection{Differencing}
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Republic} & \textbf{ADF statistic} & \textbf{p-value} & \textbf{Stationary?} \\
+\hline
+North Macedonia & -1.7 & 0.431 & no \\
+Serbia & -3.5 & 0.007 & yes \\
+Montenegro & -1.692 & 0.435 & no \\
+Slovenia & -1.765 & 0.398&  no \\
+Croatia & -1.572 & 0.497 & no \\
+Bosnia and Herzegovina & -1.831 & 0.365 & no \\
+\hline
+\end{tabular}
+\caption{Results from performing the ADF test on population by republic}
+\label{tab:adf-test-results}
+\end{table}
+Since it would be much more acceptable for the series to be stationary, only for Serbia can a model such as ARIMA be used. Regarding the other countries, we will have to perform some transformation, for example, differencing (different from the operation in calculus) — a transformation defined as:
+\begin{equation}
+    \label{eq:differencing-first-deg}
+\Delta X_t = X_t - X_{t-1},\quad\text{first-degree diff.}
+\end{equation}
+$$
+\Delta^2 X_t = \Delta (\Delta X_t) = X_t - 2X_{t-1} + X_{t-2}, \quad\text{second-degree diff.}
+$$
+$$
+\vdots
+$$
+\begin{equation}
+    \label{eq:differencing-general-case}
+    \Delta^n X_t = \sum_{k=0}^{n} (-1)^k \binom{n}{k} X_{t-k}, \quad\text{$n$-degree diff.}
+\end{equation}
+This is the most commonly used transformation in this problem and significantly increases stationarity, allowing the use of models that account for the time factor and temporal dependence. The generalized formula is based on the \textbf{binomial expansion}. A higher degree - $n > 2$ would serve for time series where for $n=1$ or $n=2$ we do not have a sufficiently stationary series after differencing.
+\subsubsection{The $B$ Operator}
+The operator $B$, called the \textbf{backshift operator} in most literature, is a unary operator that affects any arbitrary time series $X_t$. It is defined by the equality
+$$
+BX_t = X_{t-1}.
+$$
+Knowing this definition, we can rewrite equation~\ref{eq:differencing-first-deg} for first-degree differencing:
+$$
+\Delta X_t = (1-B)X_t=X_t-X_{t-1}.
+$$
+In fact, $\Delta = (1-B)$, and according to this, we get
+$$
+\Delta^nX_t = (1-B)^nX_t\quad,
+$$
+an equality that is completely identical to equation~\ref{eq:differencing-general-case}. These notations become useful when discussing the ARIMA model.
+\subsubsection{ARIMA - Auto Regressive Integrated Moving Average}
+\textbf{ARIMA} is a statistical model designed for analyzing and forecasting data present in time series. It is defined by
+\begin{equation}
+    \label{eq:arima-model}
+    \text{ARIMA}(p,d,q): \quad 
+    \underbrace{\phi(B)}_{\substack{\text{Autoregressive} \\ \text{(AR) polynomial}}} \,
+    \underbrace{\Delta^d X_t}_{\substack{\text{Differenced} \\ \text{time series}}} 
+    = 
+    \underbrace{\theta(B)}_{\substack{\text{Moving Average} \\ \text{(MA) polynomial}}} 
+    \varepsilon_t.
+\end{equation}
+The equation includes a part for \textbf{autoregression} (AR - Autoregressive), i.e., a polynomial that uses lags (previous values) of the population, a part for \textbf{differencing} — to make it stationary (I - Integrated), and \textbf{moving average} (MA). According to $p$ — the number of lags in the autoregressive polynomial, it is defined as
+$$
+\phi(B):\quad1-\phi_1B-\phi_2B^2 -\dots- \phi_pB^p.
+$$
+According to $q$ — the number of previous errors (residuals) in forecasting that will be used to correct them, it is defined as
+$$
+\theta(B):\quad1+\theta_1B+\theta_2B^2 +\dots+\theta_qB^q.
+$$
+These are defined so that the model combines lags for prediction and the differenced time series through $\phi(B)\Delta^dX_t$ together with previous forecasting noise expressed through $\theta(B)\epsilon_t$ to improve the prediction. In fact, with equation~\eqref{eq:arima-model}, it is established that autoregression together with the differenced time series behaves as and is equal to a moving average of previous forecasting noise. The autoregression part predicts the value $x_t$ (the value of the variable at time step $t$) through the relationship with lags, and the moving average part does the same, but through the noise we have observed in prediction.
+\subsubsection{Forecasting and Prediction}
+Through the use of the built-in ARIMA implementation from \texttt{statsmodels.tsa}, training is easily performed. To show accuracy through predicting already existing years, we will test it in the period from 1970 to 2000.
+\vspace{.5cm}
+\begin{lstlisting}[style=Python, caption=Code for fitting an ARIMA model for population]
+from statsmodels.tsa.arima.model import ARIMA
+# per_country_data is a dictionary mapping a country name to its data from the original DataFrame
+slovenia_pop = per_country_data['Slovenia']['all years']
+slovenia_pop.index = pd.PeriodIndex(per_country_data['Slovenia'].Year, freq='Y')
+# basic model fitting demonstration.
+p, d, q = 7, 1, 6
+model = ARIMA(slovenia_pop, order=(p, d, q))
+fit_model = model.fit()
+# testing the model
+points_pred, points_true = walk_forward_val(slovenia_pop, p, d, q)
+# tsamodel_summary is a predefined custom function
+print(tsamodel_summary(y_true=points_true, y_pred=points_pred))
+\end{lstlisting}
+According to the code, we set $p$, $d$, and $q$ to 7, 1, and 2, respectively. The parameters can also be selected by fine-tuning, but since we have a simpler problem here, there is no need, and we will select them based on what we have analyzed so far. The parameter $d$ is the degree of differencing; if we have too much or too little differencing, the model may be worse than optimal. Here, after one differencing, the series is sufficiently stationary. The parameter $p$ is chosen according to the number of lags for which the series is autocorrelated, and for Slovenia, it is 7 according to the ACF graph; the same is done for parameter $q$. The model results are in the following table.
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{$R^2$ statistic} & \textbf{MSE} & \textbf{MAE} \\
+\hline
+0.998 & 36200352.68 & 4366.48 \\
+\hline
+\end{tabular}
+\caption{Results from predicting the population of Slovenia from the 1960s to 2023 using walk-forward validation predictions (the training set is not directly used)}
+\label{tab:arima-results}
+\end{table}
+Note that we have quite good results with ARIMA; the model has an $R^2$ statistic with a value of 99.8\%, i.e., it explains 99.8\% of the variance in the data, and this is reflected in the following graph. These are not direct predictions on the same data from the training set. Instead — the model is retrained multiple times, for each year (from 1960 to 2023, as the model's implementation allows) up to that year, and then the next year is forecasted, and finally, these results are available and suitable for calculating regression metrics and evaluations. Of course, the absolute and squared errors are also relatively low compared to the expected value of the time series. Without delving into machine learning, it is necessary to check if we have overfit the data — whether through regularization or through a better division of the time series according to~\ref{sec:baiperron}, due to the risky $R^2$ score.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{arima-pred.png}
+    \caption{Visualization of predicted populations (with walk-forward validation) of Slovenia versus actual ones with ARIMA}
+    \label{fig:arima-results}
+\end{figure}
+If we want to forecast the population for the next 10 years (from 2023 to 2033), we will get the following approximately linear form of population growth.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{arima_forecast.png}
+    \caption{Visualization of predicted populations of Slovenia for the next 10 years}
+    \label{fig:arima-results-forecast}
+\end{figure}
+\section{Growth Rate in Countries}
+In this section, we will examine the growth rates in each of the countries for each year in relation to the previous one. Let $P_t$ be the population in year (or time) $t$ and $P_{t-1}$ accordingly in the previous year relative to $t$. Let the rate $r_{t, t-1}$ mentioned above be defined by:
+\begin{equation}
+\label{stapka}
+r_{t, t-1} = \frac{P_t - P_{t-1}}{P_{t-1}}, \quad r_{t, t-1} \in \mathbb{R}, t \in \{1951, 1952, ..., 2023\}.
+\end{equation}
+Since this sequence is a function of time that can be represented as:
+$$
+r(t) = \frac{P_t - P_{t-1}}{P_{t-1}} = r_{t, t-1}\quad,
+$$
+we can test it for autocorrelation and stationarity, as we did for the population itself, to see if we can treat it as a probability distribution or as a time series that can be forecasted.
+We can visualize the rate for each country to gain intuition about its nature. We will observe that in some parts, we have cyclic components (especially immediately after 1991) and oscillations, but the oscillations do not repeat in a fixed period, so we do not have seasonality in the series.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\linewidth]{rates-plot.png}
+    \caption{Annual growth rate by republic}
+    \label{fig:annual-rate-tsplot}
+\end{figure}
+According to these given graphs, similar things can be observed as in the population graphs — in the last few decades, the annual population growth rates in all republics — are around zero or negative. This would indicate several key demographic phenomena defined in the first part.
+\subsection{Autocorrelation of the Rate}
+To draw a parallel with the first derivation of ACF graphs, we can do exactly the same here to see if this transformation will leave the series autocorrelated as it was before the transformation.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.825\linewidth]{acfs-ann-growth.png}
+    \caption{ACF plot by country for the annual population growth rate}
+    \label{fig:acf-plot-ann-rate}
+\end{figure}
+It is easy to observe that it is an autocorrelated series for each country up to a lag value of approximately $\approx 4$, which, unlike previously, was $\approx 7$. For Bosnia and Herzegovina, autocorrelation sharply enters the confidence interval (which is also much stricter than others) after the third lag.
+A similar case is present in Croatia, where a smaller number of lags (up to which the series is autocorrelated) is present compared to other countries, and we previously saw in figures~\ref{fig:population-trends} and~\ref{fig:population-trends-combined} that there are many oscillations and sudden changes in these two countries, which will be further analyzed with formal statistical methods.
+If we use a \texttt{lag plot} again, we can get a clearer picture and further explain why they are like this.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{lag_plots_ann_rate_pop.png}
+    \caption{\texttt{Lag plot} for population growth rate by republic}
+    \label{fig:lag-plot-ann-rate}
+\end{figure}
+In this visualization, data with greater dispersion are present, resulting from slight decorrelation through the nature of calculation~\eqref{stapka}. By nature, the rate represents an incremental change and is less prone to having a memory property. If we look at the graph for Slovenia in Figure~\ref{fig:lag-plot-ann-rate}, there is a huge difference from the population in Figure~\ref{fig:lag-plot-pop}, where, in contrast, it shows the most stable autocorrelation. However, regardless, the confidence intervals for autocorrelation for the rates are such that they allow coefficients as low as $\approx 0.37$ (as in BiH), and therefore still have autocorrelation present up to a lag of $\approx 4$.
+\subsection{Analysis of Population as a Time Series}
+Additionally, in this section, stationarity should be tested, just as for the population, in addition to autocorrelation, to see how we will proceed with forecasting — whether directly, or if we will again need to use a preprocessing technique to make the series stationary. In the following table, the ADF statistics are given, along with the p-values through which we can determine whether a time series is stationary.
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Republic} & \textbf{ADF statistic} & \textbf{p-value} & \textbf{Stationary?} \\
+\hline
+North Macedonia & -0.572 & 0.877 & no \\
+Serbia & -1.028 & 0.742 & no \\
+Montenegro & -1.995 & 0.289 & no \\
+Slovenia & -1.841 & 0.36 &  no \\
+Croatia & -1.299 & 0.63 & no \\
+Bosnia and Herzegovina & -2.794 & 0.059 & no \\
+\hline
+\end{tabular}
+\caption{Results from performing the ADF test on the annual growth rate by republic}
+\label{tab:adf-test-results-growth-rate}
+\end{table}
+According to the table, a transformation should be performed to make the annual growth rate series for each country stationary, with the same goal of having room for forecasting — as with the population. The initial transformation of the population into a growth rate did not help in terms of stationarity — i.e., it did not make the time series under question more stationary.
+\subsection{Forecasting the Population Growth Rate}
+Since the series are not seasonal, we can again use ARIMA (instead of SARIMA — which includes the seasonal component), and for the cyclic components and seasonality, the differencing itself will take care. Now we can return to Slovenia and predict the growth rate for it. We will set the parameters to $p$ = 4 and $d$ = 1 since the series for Croatia is autocorrelated with lag 4 (visible), and with first-degree differencing, the series is appropriately stationary for ARIMA — the model itself in \texttt{python} will tell us if this is not the case otherwise. Here, it is significantly important to note that even with $d$ = 0 — i.e., without differencing, the series can be sufficiently stationary, because the calculation for the growth rate~\eqref{stapka} itself includes differencing with the previous lag in the numerator, and for the direct prediction of the population shown in Figure~\ref{fig:arima-results}, we have already performed one differencing for the prediction with the ARIMA model.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\linewidth]{arima-rate-pred.png}
+    \caption{Predictions for the growth rate of Croatia from 1960 to 2023}
+    \label{fig:arima-rate-pred}
+\end{figure}
+In this case, although we have a more turbulent graph compared to the population, ARIMA still approximately knows how to model the nature of the rate itself, with the following results according to the appropriate metrics.
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{$R^2$ statistic} & \textbf{MSE} & \textbf{MAE} \\
+\hline
+0.719 & $\approx 4.299 \cdot 10^{-6}$ & $\approx 1.36 \cdot 10^{-3}$ \\
+\hline
+\end{tabular}
+\caption{Results from predicting the growth rate of Slovenia from the 1960s to 2023 (again, using walk-forward validation)}
+\label{tab:arima-results}
+\end{table}
+The variance described by the model this time is lower — a fact implied by the $R^2$ statistic with a value of 71.9\% — due to cyclic components in the growth rate in certain periods in the 1980s. The forecasted growth rate of Slovenia until 2033 from 2023 looks like this:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{arima_rate_forecast.png}
+    \caption{Forecasted growth rate of Slovenia for the next 10 years}
+    \label{fig:arima-rate-forecast}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{prev_pop_rate_slov.png}
+    \caption{Calculated growth rate of Slovenia for the next 10 years via forecasted population}
+    \label{fig:existing-pop-growth-percent-slov}
+\end{figure}
+If we take the population forecasted according to Figure~\ref{fig:arima-results-forecast} and calculate the growth rate on it, we will get a quite different forecast from the one in Figure~\ref{fig:arima-rate-forecast}. This result is shown in Figure~\ref{fig:existing-pop-growth-percent-slov}. We need to be very careful here about which result we will have more confidence in — ARIMA trained on population and on growth rate can behave completely differently because it is a completely different time series, and in this case, it gives completely different results. This is an example of how we can get seemingly semantically identical series with quite contradictory results.
+\section{Regime Changes}
+\label{sec:baiperron}
+\subsection{Definition of the Bai-Perron Test for Structural Breaks}
+In this section, we will examine how we can find structural breaks — i.e., years in which there is a potential key event.
+First, we need to formalize the time series we are using in mathematical notation. The series on which we will perform statistical tests contains populations by year. Let $t$ denote a time step — i.e., the year in which the population statistic is measured. Since we are now considering only population, we have a univariate time series. Let
+$$
+\{ p_t \}_{t\in T}, \quad T \in \{1950, 1951, \dots, 2023\}
+$$
+represent the time series in question for the population of any of the countries that were members of the SFRY.
+\subsection{General Case of Bai-Perron}
+Now we need to define the test that will be used to achieve the goal of this section. Although we have a univariate time series, we will first define the test in the general case to fully understand the point and execution of the test. For an \textbf{arbitrary} time series $y_t$ with $k$ dependent variables (attributes) $x_{1,t},...,x_{k,t}$, the model with $m$ structural breaks is:
+$$
+y_t = \beta_j^{(0)} + \beta_j^{(1)}x_{1,t} + \cdots + \beta_j^{(k)}x_{k,t} + \epsilon_t = \epsilon_t + \sum_{i=0}^{k} \beta_j^{(i)} x_{i,t}, \quad t = T_{j-1} + 1, \ldots, T_j
+$$
+or in vector form:
+$$
+y_t = \boldsymbol{\beta_j^\top x_t} + \epsilon_t, \quad t = T_{j-1} + 1, \ldots, T_j
+$$
+where: \\
+\hspace{10pt} $T_j$: points of structural breaks, where $j = 1, \ldots, m$ \\
+\hspace{10pt} $\beta_j^{(i)}$: the $i$-th coefficient in the $j$-th \textbf{regime} (i.e., the $i$-th element of the vector $\boldsymbol{\beta_j}$) \\
+\hspace{10pt} $\boldsymbol{x_t} = \langle 1, x_{1,t}, \dots, x_{k,t}\rangle^\top$: vector of independent variables relative to $y_t$\\
+\hspace{10pt} $\epsilon_t \sim \mathcal{N}(0, \sigma^2)$: noise with normal distribution \\
+Additionally, there is a need to define a \textbf{regime} — a part of the time series that is considered a stable period, i.e., where there are no break points between, so one critical point represents a change in one regime.
+\subsection{Special Case: One Country, Population as Variable}
+For the population $p_t$ of a country (single independent variable), the model simplifies to:
+\begin{equation}
+p_t = \beta_j + \epsilon_t, \quad t=T_{j-1}+1,...,T_j
+\end{equation}
+where: \\
+\hspace{10pt} $\beta_j$ - the expected population in the $j$-th period \\
+\hspace{10pt} $T_j$ - years when the average population significantly changes
+\subsection{Intuitive Interpretation}
+The test identifies the years when the population of a country experienced one of the following:
+\item \textbf{Jump} (sudden increase) - e.g., after a war when refugees return
+\item \textbf{Drop} (sudden decrease) - e.g., during wars or economic crises
+\item \textbf{Change in trend} - e.g., from growth to stagnation
+In fact, it looks for where there are structural breaks in the time series, through multiple linear regression models.
+\subsection{Steps in the Bai-Perron Test}
+\begin{enumerate}
+    \item \textbf{Fitting the model with a different number of breaks:}
+    \item Starting from a model without breaks (one segment for the entire series).
+        \item Gradually increasing the number of breaks and fitting the model for each number \( m = 1, 2, \dots \)
+    \item \textbf{Calculation of Residual Square Sum (RSS) for each model:}
+    $$
+    RSS(m) = \sum_{j=1}^{m+1} \sum_{t = t_{j-1} + 1}^{t_j} \hat\epsilon_t^2\space,
+    $$
+    $$\hat\epsilon = \hat P_t - P_t\space, \text{for population of one country} $$
+    \item \textbf{Testing for the existence of breaks:}
+    To see if we have any breaks at all, we use the statistic
+    $$
+    F_{\text{sup}}(m, m+1) = \frac{RSS(m) - RSS(m+1)}{RSS(m+1)} \left(T - (m+1)\right).
+    $$
+    The test is defined according to the hypotheses:
+    $$
+    H_0: \text{There are no structural breaks in the time series}
+    $$
+    $$
+    H_a: \text{There is at least one structural break in the time series}
+    $$
+    In this test, the p-value is, of course, calculated through simulations, and if $p < 0.05$, then we will conclude that there are breaks.
+    \item \textbf{Selection of the optimal number of breaks:}
+    Instead of using the $\sup F$ statistic to test whether adding a new break significantly improves the model sequentially after adding a break, we can use the metric \textbf{Akaike Information Criterion (AIC)}, which is defined by equation~\eqref{eq:akaikeinfo}.
+\end{enumerate}
+\subsection{Implementation and Results of the Bai-Perron Test}
+So far, everything has been done and visualized using \texttt{python}, but unfortunately, the Bai-Perron test does not exist in this language, so we can use the \texttt{rpy} library to call \texttt{R} through \texttt{python}. To analyze a population with this test, where we expect at most \texttt{max\_breakpoints} structural breaks, we can do it with the following source code.
+\begin{lstlisting}[style=Python, caption=Using a ready-made implementation in \texttt{python}]
+import rpy2.robjects as robjects
+from rpy2.robjects import numpy2ri
+breaks_per_country = dict()
+numpy2ri.activate()
+for c in search_for:
+	single_country = extract_eq(yugoslav_countries, 'Entity', c)
+	max_breakpoints = 6
+	h_val = len(single_country) // max_breakpoints
+	robjects.globalenv["pop"] = single_country['all years'].to_numpy()
+	robjects.r("time <- 1:length(pop)")
+	robjects.r("data <- data.frame(pop=pop, time=time)")
+	robjects.r("library(strucchange)")
+	robjects.r(f"bp <- breakpoints(pop ~ 1, data=data, h={h_val})")
+	robjects.r("test_result <- sctest(pop ~ 1, data=data, type='supF')")
+	robjects.r("aic_values <- AIC(bp)")
+	best_k = int(robjects.r("which.min(aic_values)")[0]) 
+	robjects.r(f"final_bp <- breakpoints(pop ~ 1, data=data, breaks={best_k})")
+	robjects.r("break_dates <- breakdates(final_bp)")
+	breaks_per_country[c] = single_country.Year.iloc[np.int64(np.array(robjects.r("break_dates")) * len(single_country))]
+\end{lstlisting}
+Since we want to find a number of breaks that would be good — i.e., good according to the linear model in Bai-Perron, we can use AIC (Akaike Information Criterion), which according to our data is
+\begin{equation}
+    \label{eq:akaikeinfo}    
+    AIC = n\ln MSE + 2k,\quad \text{$k$ - structural breaks, $n$ - dataset size}
+\end{equation}
+This metric establishes a balance between how simple it is — therefore, it has a small penalty for the number of structural breaks, but not as large as the BIC metric, which gives only 1 structural break if we use it — and its maximum goodness of fit. Of course, the smallest value of this metric is in favor of the best model.
+The results from the execution of the test, and the use of the best model chosen by it according to AIC, yield the result shown in the following table.
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|c|l|c|}
+    \hline
+    \textbf{Republic} & \textbf{Number of breaks} & \textbf{Break years} & \textbf{p-value} \\
+    \hline
+    North Macedonia & 4 & 1961, 1971, 1983, 2013 & 0.0 \\
+    Serbia & 4 & 1961, 1973, 2001, 2013 & $\approx$ 0.0\\
+    Croatia & 5 & 1961, 1971, 1983, 1997, 2013 & 0.0 \\
+    Montenegro & 3 & 1961, 1971, 1984 & $\approx$ 0.0 \\
+    Bosnia and Herzegovina & 5 & 1961, 1971, 1983, 1993, 2012 & $\approx $ 0.0 \\
+    Slovenia & 4 & 1961, 1973, 1984, 2009 & 0.0 \\
+    \hline
+    \end{tabular}
+    \caption{Results from the Bai-Perron test, along with p-values from the supF test}
+    \label{tab:results-bai-perron}
+\end{table}
+We get years — for all countries not including the breakup of Yugoslavia (1991) according to this test, but regardless, this is a structural break we already know had an effect on some countries. We will take Bosnia and Herzegovina as an example on which we will analyze deeper. These years actually give endpoints of periods where there is a different structure on the population graph.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{bosnia-segmented.png}
+    \caption{Population of Bosnia and Herzegovina through different detected periods with different structures}
+    \label{fig:bosnia-dissect}
+\end{figure}
+If we do a quick search on some language model or search engine like Google, we get the following:
+\begin{description}[labelsep=1em, leftmargin=2.5em]
+\item[1961–1971:] 
+A period of demographic growth within the Socialist Federal Republic of Yugoslavia. Bosnia and Herzegovina, as one of the six republics, records a high birth rate, industrialization, and urban expansion. State stability under Tito contributes to natural growth and a population boom.
+\item[Turning point ~1971:] 
+The turning point coincides with the Constitutional Reforms of 1971, which brought decentralization and allowed the strengthening of national identities, especially among Bosniaks, Croats, and Serbs. Growth begins to slow, urbanization occurs, and birth rates decline.
+\item[1971–1993:] 
+A period of stable but slowed growth. During the 1980s, Yugoslavia entered an economic crisis, and national tensions grew. Tito's death (1980) and the beginning of the federation's collapse led to instability. By the early 1990s, Bosnia was on the verge of armed conflict.
+\item[Turning point ~1993:] 
+The turning point is a consequence of the Bosnian War (1992–1995). Census data and estimates show a drastic population decline due to mass displacement, refugees, loss of life, ethnic cleansing, and inter-ethnic violence.
+\item[1993–2012:] 
+Post-war recovery. Partial return of displaced persons, stabilization of the economy, but also the beginning of long-term demographic problems. Around 2002, a new wave of emigration began, especially of young people. Natural increase is decreasing, and population aging is accelerating.
+\item[Turning point ~2012:] 
+Structural transition into a phase of continuous demographic decline. Bosnia and Herzegovina faces chronic decline in birth rates, increased mortality, and outflow of working-age population to Western Europe. The phase of "demographic winter" begins.
+\item[2012–2022:] 
+The population shows a constant decline. The country faces a complex demographic crisis: low birth rates, rapid aging, and negative migration balance. Local municipalities are becoming demographically empty, with strong socio-economic implications.
+\end{description}
+Generally, the common reasons for Yugoslavia apply to each member, except Montenegro and Slovenia, which have relatively stable growth with some minor discrepancies.
+Since these sub-time series are still time series, we can perform a re-analysis of stationarity with the ADF test and autocorrelation with ACF graphs to optimize them for forecasting and prediction, where we will likely get more precise predictions and perhaps closer forecasts. This is because we have separate regimes where the situation is clearer than in the entire existence, but we need to be careful about the data volume — for example, here we have a small number of populations; if we had populations by month, the analysis would be different and easier to perform — but these data are almost impossible to obtain.
+\section{Additional Anomalies in the Dataset}
+To see if some years represent general anomalies in the population dataset, we will use the Isolation Forest algorithm, an unsupervised machine learning algorithm based on \href{https://ieeexplore.ieee.org/document/10562290}{decision trees} — which are more commonly used for supervised machine learning.
+\subsection{Principle of Operation and Visual Interpretation}
+Isolation Forest is an anomaly detection model that functions differently from classical methods. Instead of learning what is "normal," it tries to isolate each data sample through random splits — and this is where the idea lies:
+Anomalies are fewer and significantly different, so they are easier and faster to isolate.
+The algorithm builds many trees where each branch randomly selects a feature (here we have only population), a random split value to divide the group into two parts. This process is repeated until each data point is alone in a leaf (isolated). The length of the path is measured — the number of splits needed to isolate each data point. If a data point is isolated with few splits, it is considered an anomaly.
+For a more intuitive interpretation, we can imagine that we have many objects on a table clustered towards the center, but some at the edges of the cluster are a bit further from the cluster itself. If we place a wall (line) that will divide the objects into two parts and repeat the process multiple times, it is likely that the objects at the edges are anomalies, i.e., they will be found in some division faster. Figure~\ref{fig:isol-intuitive} establishes this concept.
+\begin{figure}[H]
+\centering
+    \includegraphics[width=0.75\linewidth]{anomaly_demonst.png}
+    \caption{Demonstration of quickly finding anomalies in 2D data}
+    \label{fig:isol-intuitive}
+\end{figure}
+\subsection{Application of the Model}
+To apply the model to these time series we have analyzed so far, we will use the following code.
+\begin{lstlisting}[style=Python, caption=Code for anomaly detection via Isolation Forest]
+import numpy as np
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
+for c in search_for:
+    pop_series = extract_eq(yugoslav_countries, 'Entity', c)['all years']
+    values = pop_series.values
+    X = values.reshape(-1, 1)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    iso_forest = IsolationForest(contamination=0.05, random_state=42)
+    iso_forest.fit(X_scaled)
+    preds = iso_forest.predict(X_scaled)
+    anomalies = preds == -1
+    anomalous_years = []
+    for ind, anomaly in enumerate(anomalies):
+      if anomaly:
+        anomalous_years += [ind + 1950]
+    print(f'Country: {c}
+Years as anomalies:{anomalous_years}
+Populations:{pop_series.iloc[np.array(anomalous_years) - 1950].tolist()}')
+\end{lstlisting}
+\vspace{1cm}
+The results obtained from fitting the model are shown in the following table.
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|l|p{5.5cm}|p{5.5cm}|}
+\hline
+\textbf{Country} & \textbf{Years with anomalies} & \textbf{Population (in those years)} \\
+\hline
+North Macedonia & 1950, 1951, 1952, 1953 & 1,248,628; 1,270,990; 1,294,492; 1,319,425 \\
+\hline
+Serbia & 1950, 1951, 1952, 1953 & 6,009,148; 6,067,002; 6,127,217; 6,192,368 \\
+\hline
+Croatia & 1950, 1990, 2021, 2023 & 3,864,936; 4,835,027; 3,924,558; 3,895,973 \\
+\hline
+Montenegro & 1950, 1951, 1952, 1953 & 402,476; 410,024; 418,859; 427,440 \\
+\hline
+Bosnia and Herzegovina & 1950, 1951, 1952, 1991 & 2,690,354; 2,730,187; 2,774,647; 4,458,299 \\
+\hline
+Slovenia & 1950, 1951, 2020, 2023 & 1,446,309; 1,462,680; 2,102,370; 2,118,353 \\
+\hline
+\end{tabular}
+\caption{Population anomalies detected with Isolation Forest (by country)}
+\label{tab:population_anomalies}
+\end{table}
+Additionally, we can display the time series with the marked anomalies and graphs together with the real number line to establish an interpretation.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{overall-plot-isolation.png}
+    \caption{Visualized results from Isolation Forest}
+    \label{fig:overall-isolation-seen}
+\end{figure}
+According to the results, in all population time series, we can see the initial years as anomalies, and this is generally because they are considered minimal and are not part of the standard years that would be considered normal population by the model. On the left side of the visualization, we can see the results presented on the real line, where it is established that these years in the time series are initial and the lowest; there is no special reason for these years, and therefore they do not necessarily have to be considered anomalies because they are the initial phase of the time series.
+In Croatia and Slovenia, two years at the end are considered anomalies for a similar reason as previously — they are some peaks — high values in the time series and are therefore isolated.
+In Bosnia and Herzegovina and Croatia — at the very beginning, we established that 1991 would be considered some kind of break or anomaly and is therefore marked — because it is a point with a high population value after a long time, and after it, the population starts to decline drastically in these two countries.
+\section{Additional Processing}
+\subsection{Granger Causality Test}
+To achieve richer and better forecasts, we can also include other time series corresponding to the years — mortality, birth rate, migrations, etc. Granger causality tests whether one time series $X_t$ can help predict another series $Y_t$. Formally, the models are:
+$$
+Y_t = \alpha_0 + \sum_{i=1}^p \alpha_i Y_{t-i} + \epsilon_t \quad \text{(model without } X_t\text{, i.e., restricted model)}
+$$
+$$
+Y_t = \beta_0 + \sum_{i=1}^p \beta_i Y_{t-i} + \sum_{i=1}^p \gamma_i X_{t-i} + \eta_t \quad \text{(model with } X_t\text{, i.e., unrestricted model)}
+$$
+Test hypotheses:
+$$
+H_0: \gamma_1 = \gamma_2 = \cdots = \gamma_p = 0 \quad \text{(X does not "describe" Y at all)}
+$$
+$$
+H_a: \exists \, i \text{ such that } \gamma_i 
+eq 0 \quad \text{(X "Granger-causes" Y)}
+$$
+We use an $F$-test to compare the two regressions.
+$$
+F = \frac{\frac{RSS_r - RSS_u}{q}}{\frac{RSS_u}{T - k}}
+$$
+\item \( RSS_r \): Residual sum of squares from the restricted model.
+    \item \( RSS_u \): Residual sum of squares from the unrestricted model.
+    \item \( q \): Number of restrictions (i.e., number of coefficients \( \gamma_i \) set to 0 in the restricted model).
+    \item \( T \): Number of observations.
+    \item \( k \): Number of parameters in the unrestricted model.
+Description of symbols in regression:
+\item \( Y_t \): Dependent variable (i.e., time series we want to predict).
+    \item \( X_t \): Independent variable (i.e., time series testing its effect on the dependent variable).
+    \item \( \alpha_0, \beta_0 \): Constant (y-intercept) in the models.
+    \item \( \alpha_i, \beta_i \): Coefficients for lags of the dependent variable \( Y_t \), i.e., previous values of \( Y \).
+    \item \( \gamma_i \): Coefficients for lags of the independent variable \( X_t \), i.e., previous values of \( X \).
+    \item \( \epsilon_t, \eta_t \): Random errors (disturbances), representing unrealized factors affecting \( Y_t \) and \( X_t \), not included in the model.
+    \item \( p \): Number of lags (or number of previous values) we consider for the dependent variable \( Y_t \).
+\subsection{Logistic Growth Model}
+The logistic model describes growth that is limited by some maximum value (carrying capacity), which is a common case in natural processes such as population. Mathematically, it is defined by the differential equation:
+$$
+\frac{dP}{dt} = r_{t, t-1}P\left(1 - \frac{P_t}{K}\right)
+$$
+where $P_t$ is the population at time (year) $t$, $r_{t, t-1}$ is the growth rate in year $t$ relative to year $t-1$, and $K$ is the maximum capacity.
+Unlike ARIMA, which assumes linearity and stationarity, the logistic model captures nonlinear constraints in time and segmented time series, making it suitable for regime analyses with limited growth.
+\subsection{Exponential Growth Model}
+The exponential model assumes constant growth at a fixed rate and is used when there are no growth constraints in the analyzed period. The formula for exponential growth is:
+$$
+P(t) = P_0 e^{rt}
+$$
+where $P_0$ is the initial value, and $r$ is the constant growth rate.
+This model is simpler than the logistic one but is useful for sub-time series where growth is accelerated and shows no signs of constraint. Unlike ARIMA, which treats the time series statistically, the exponential model captures the dynamic characteristics of the system in growth.
+Due to these properties, the logistic and exponential models are particularly applicable when analyzing sub-time series (regimes) where structural change and nonlinear development are expected, which ARIMA models can hardly model adequately.
+\end{document}
